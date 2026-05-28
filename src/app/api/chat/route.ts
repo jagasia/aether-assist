@@ -51,7 +51,7 @@ async function summarizeOldMessages(
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
-    const { model, messages } = payload;
+    const { model, messages, systemPrompt, assistantId } = payload;
 
     if (!model || !Array.isArray(messages)) {
       return NextResponse.json(
@@ -67,6 +67,9 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Use provided systemPrompt from assistant, fall back to default
+    const effectiveSystemPrompt = systemPrompt || SYSTEM_MESSAGE;
 
     let finalMessages = messages;
 
@@ -96,7 +99,7 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: "system", content: SYSTEM_MESSAGE }, ...finalMessages],
+        messages: [{ role: "system", content: effectiveSystemPrompt }, ...finalMessages],
         max_tokens: 2000,
         stream: true,
         extra_body: {
