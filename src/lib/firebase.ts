@@ -48,26 +48,24 @@ function installFirestoreRequestLogger() {
   };
 
   const originalOpen = window.XMLHttpRequest.prototype.open;
-  window.XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...args: any[]) {
-    try {
-      const urlString = typeof url === "string" ? url : url.toString();
-      if (urlString.includes(fireHost)) {
-        console.log("Firestore XHR open:", { method, url: urlString });
-        this.addEventListener("readystatechange", function () {
-          if (this.readyState === 4) {
-            console.log("Firestore XHR response:", {
-              status: this.status,
-              responseURL: this.responseURL,
-              url: urlString,
-            });
-          }
-        });
-      }
-    } catch (xhrLoggerError) {
-      console.warn("Firestore XHR logger failed", xhrLoggerError);
+ window.XMLHttpRequest.prototype.open = function (method: string, url: string | URL, ...args: any[]) {
+  try {
+    const urlString = typeof url === "string" ? url : url.toString();
+    if (urlString.includes(fireHost)) {
+      console.log("Firestore XHR open:", { method, url: urlString });
+      this.addEventListener("readystatechange", function () {
+        if (this.readyState === 4) {
+          // Response logs if needed
+        }
+      });
     }
-    return originalOpen.apply(this, [method, url, ...args]);
-  };
+  } catch (xhrLoggerError) {
+    console.warn("Firestore XHR logger failed", xhrLoggerError);
+  }
+
+  // TypeScript எர்ரரைத் தவிர்க்க (arguments as any) அல்லது [method, url, ...args] as any என பாஸ் செய்கிறோம்
+  return (originalOpen as any).apply(this, [method, url, ...args]);
+};
 }
 
 function logFirestoreInternalSettings() {
