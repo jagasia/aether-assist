@@ -24,16 +24,26 @@ function installFirestoreRequestLogger() {
   const originalFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     try {
-      const url = typeof input === "string" ? input : input.url;
+      // TypeScript எர்ரரைத் தவிர்க்க input-ன் டைப்பைச் சரியாகக் கண்டறிந்து url எடுத்தல்
+      let url = "";
+      if (typeof input === "string") {
+        url = input;
+      } else if (input instanceof URL) {
+        url = input.toString();
+      } else if (input && "url" in input) {
+        url = (input as any).url;
+      }
+
       if (typeof url === "string" && url.includes(fireHost)) {
         console.log("Firestore fetch request:", {
           url,
-          method: init?.method ?? (typeof input !== "string" ? input.method : "GET"),
+          method: init?.method ?? (typeof input !== "string" && "method" in input ? (input as any).method : "GET"),
         });
       }
     } catch (fetchLoggerError) {
       console.warn("Firestore fetch logger failed", fetchLoggerError);
     }
+
     return originalFetch(input, init);
   };
 
