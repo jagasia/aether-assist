@@ -3,9 +3,9 @@
 import React, { useState } from "react";
 import { useAssistant } from "./AssistantContext";
 import CreateAssistantForm from "./CreateAssistantForm";
-import { Plus, Trash2, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Edit2, Check, X, MessageSquare } from "lucide-react";
 import { db } from "../lib/firebase";
-import { doc, deleteDoc } from "firebase/firestore";
+import { doc, deleteDoc, updateDoc } from "firebase/firestore";
 
 function formatRelativeTime(timestamp?: any) {
   if (!timestamp) return "—";
@@ -28,8 +28,6 @@ function formatRelativeTime(timestamp?: any) {
 }
 
 export default function AssistantsSidebar() {
-  // குறிப்பு: உங்க AssistantContext-ல் activeChatId மற்றும் setActiveChatId (அல்லது selectChat) இருக்க வேண்டும்.
-  // தற்போதைக்கு Context-ல் இவை இருப்பதாகக் கொண்டு எழுதியுள்ளேன்.
   const { 
     assistants, 
     chats, 
@@ -41,6 +39,10 @@ export default function AssistantsSidebar() {
   } = useAssistant();
   
   const [showCreateModal, setShowCreateModal] = useState(false);
+  
+  // எடிட்டிங் ஸ்டேட்ஸ்
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
 
   // சாட்டை டெலீட் செய்யும் ஃபங்ஷன்
   const handleDeleteChat = async (e: React.MouseEvent, chatId: string) => {
@@ -54,6 +56,31 @@ export default function AssistantsSidebar() {
       }
     } catch (error) {
       console.error("Error deleting chat:", error);
+    }
+  };
+
+  // எடிட் மோடை ஆன் செய்யும் ஃபங்ஷன்
+  const handleStartEdit = (e: React.MouseEvent, chatId: string, currentTitle: string) => {
+    e.stopPropagation(); // சாட் செலக்ட் ஆவதைத் தடுத்தல்
+    setEditingChatId(chatId);
+    setEditTitle(currentTitle || "Chat");
+  };
+
+  // சாட்டின் தலைப்பை ஃபையர்ஸ்டோரில் சேவ் செய்யும் ஃபங்ஷன்
+  const handleSaveTitle = async (chatId: string) => {
+    if (!editTitle.trim()) {
+      setEditingChatId(null);
+      return;
+    }
+
+    try {
+      const chatRef = doc(db, "chats", chatId);
+      await updateDoc(chatRef, {
+        title: editTitle.trim()
+      });
+      setEditingChatId(null);
+    } catch (error) {
+      console.error("Error updating chat title:", error);
     }
   };
 
@@ -93,8 +120,8 @@ export default function AssistantsSidebar() {
                   </div>
                 </div>
               </button>
-            ))
-          )}
+            )
+          ))}
         </div>
       </div>
 
@@ -118,11 +145,14 @@ export default function AssistantsSidebar() {
             chats.map((c: any) => {
               const chatId = c.id || c.chatId;
               const isActive = activeChatId === chatId;
+              const isEditing = editingChatId === chatId;
+
               return (
                 <div 
                   key={chatId} 
-                  onClick={() => setActiveChatId && setActiveChatId(chatId)}
-                  className={`group w-full rounded-xl border px-3 py-2.5 transition cursor-pointer flex items-center justify-between gap-2 
+                  onClick={() => !isEditing && setActiveChatId && setActiveChatId(chatId)}
+                  className={`group w-full rounded-xl border px-3 py-2.5 transition flex items-center justify-between gap-2 
+                    ${isEditing ? "cursor-default" : "cursor-pointer"}
                     ${isActive 
                       ? "bg-indigo-700/20 border-indigo-500/40 hover:bg-indigo-700/30" 
                       : "bg-slate-900/40 border-slate-800/40 hover:bg-slate-800/40"
@@ -131,24 +161,75 @@ export default function AssistantsSidebar() {
                   <div className="flex-1 min-w-0 flex items-start gap-2">
                     <MessageSquare className={`w-4 h-4 mt-0.5 shrink-0 ${isActive ? "text-indigo-400" : "text-slate-500"}`} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-slate-200 truncate">{c.title || "Chat"}</div>
-                      <div className="mt-0.5 text-xs text-slate-400 truncate">
-                        {c.lastMessage || "Open conversation"}
-                      </div>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onBlur={() => handleSaveTitle(chatId)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleSaveTitle(chatId);
+                            if (e.key === "Escape") setEditingChatId(null);
+                          }}
+                          onClick={(e) => e.stopPropagation()} // இன் புட் கிளிக் சாட்டை பாதிக்காமல் இருக்க
+                          className="w-full bg-slate-800 text-slate-100 text-sm font-medium px-2 py-0.5 rounded border border-indigo-500 focus:outline-none"
+                          autoFocus
+                        />
+                      ) : (
+                        <>
+                          <div className="text-sm font-medium text-slate-200 truncate">{c.title || "Chat"}</div>
+                          <div className="mt-0.5 text-xs text-slate-400 truncate">
+                            {c.lastMessage || "Open conversation"}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                   
+                  {/* ஆக்ஷன் பட்டன்கள் */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-[10px] text-slate-500 group-hover:hidden">
-                      {formatRelativeTime(c.lastMessageAt)}
-                    </span>
-                    <button
-                      onClick={(e) => handleDeleteChat(e, chatId)}
-                      className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition opacity-0 group-hover:opacity-100"
-                      title="Delete Chat"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {isEditing ? (
+                      // எடிட் செய்யும் போது காட்டும் பட்டன்கள்
+                      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleSaveTitle(chatId)}
+                          className="p-1 rounded text-emerald-400 hover:bg-slate-800 transition"
+                          title="Save Title"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditingChatId(null)}
+                          className="p-1 rounded text-slate-400 hover:bg-slate-800 transition"
+                          title="Cancel"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      // சாதாரண நிலையில் காட்டும் பட்டன்கள் (Hover செய்யும் போது மட்டும் எடிட்/டெலீட் ஐகான்கள் தெரியும்)
+                      <>
+                        <span className="text-[10px] text-slate-500 group-hover:hidden">
+                          {formatRelativeTime(c.lastMessageAt)}
+                        </span>
+                        <div className="hidden group-hover:flex items-center gap-0.5">
+                          <button
+                            onClick={(e) => handleStartEdit(e, chatId, c.title)}
+                            className="p-1 rounded text-slate-400 hover:text-indigo-400 hover:bg-slate-800 transition"
+                            title="Edit Title"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteChat(e, chatId)}
+                            className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition"
+                            title="Delete Chat"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );
