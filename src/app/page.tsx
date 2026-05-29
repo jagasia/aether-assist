@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState, useEffect } from "react";
+import { type FormEvent, useState, useEffect, useRef } from "react"; // ---> useRef-ஐ சேர்த்துள்ளோம்
 import { ArrowRight, Sparkles, Menu, X } from "lucide-react";
 import { AuthProvider, useAuth } from "../components/AuthContext";
 import { AssistantProvider, useAssistant } from "../components/AssistantContext";
@@ -61,9 +61,19 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string>("");
-  
-  // ---> புது வரவு: அசிஸ்டண்ட் டைப் செய்வதை ரியல்-டைமில் காட்ட இந்த லோக்கல் ஸ்டேட் <---
   const [streamingResponse, setStreamingResponse] = useState<string>("");
+
+  // ---> புது வரவு: சாட் ஏரியாவின் கடைசிப் பகுதியை ட்ராக் செய்ய Ref <---
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // ---> புது வரவு: புது மெசேஜ் வரும்போதோ அல்லது ஸ்ட்ரீமிங் நடக்கும்போதோ ஆட்டோ-ஸ்க்ரோல் செய்யும் useEffect <---
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, streamingResponse]); // மெசேஜ்கள் மாறினாலும், ஸ்ட்ரீம் ஆனாலும் கீழே ஸ்க்ரோல் ஆகும்!
 
   // சாட் மாறும்போது அதற்குரிய அசிஸ்டண்ட்டை ஹெடருடன் சிங்க் செய்யும் useEffect
   useEffect(() => {
@@ -101,7 +111,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
     setInput("");
     setError(null);
     setIsLoading(true);
-    setStreamingResponse(""); // புது சாட் என்பதால் க்ளியர் செய்கிறோம்
+    setStreamingResponse("");
 
     try {
       let currentTargetChatId = activeChatId;
@@ -149,7 +159,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
       let buffer = "";
       let fullAssistantResponse = "";
 
-      // ஸ்ட்ரீமிங் டேட்டாவைப் படித்தல்
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -171,24 +180,22 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
             const delta = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content;
             if (typeof delta === "string" && delta.length > 0) {
               fullAssistantResponse += delta;
-              // ---> மேஜிக் இங்கே நடக்குது: லோக்கல் ஸ்டேட்டை உடனுக்குடன் அப்டேட் செய்து UI-ல் காட்டுகிறோம் <---
               setStreamingResponse(fullAssistantResponse);
             }
           } catch {
-            // Partial parse எர்ரர்களை இக்னோர் செய்தல்
+            // Ignore partial errors
           }
         }
       }
 
-      // முழுமையாக ரெஸ்பான்ஸ் வந்தவுடன் ஃபயர்ஸ்டோரில் நிரந்தரமாகச் சேமித்தல்
       if (fullAssistantResponse) {
         await sendMessageToFirestore(currentTargetChatId, "assistant", fullAssistantResponse);
       }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Something went wrong.");
-    } resolve: {
+    } finally {
       setIsLoading(false);
-      setStreamingResponse(""); // ஃபயர்ஸ்டோரில் சேவ் ஆகிவிட்டதால் லோக்கல் ஸ்ட்ரீமிங் ஸ்டேட்டை க்ளியர் செய்கிறோம்
+      setStreamingResponse("");
     }
   };
 
@@ -243,7 +250,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
           </div>
         ) : (
           <>
-            {/* ஏற்கனவே ஃபயர்ஸ்டோரில் இருக்கும் பழைய மெசேஜ்கள் */}
             {messages.map((message, idx) => (
               <div key={idx} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] sm:max-w-[75%] ${message.role === "user" ? "rounded-br-none" : "rounded-bl-none"} ${roleStyles[message.role === "user" ? "user" : "assistant"]} px-5 py-4`}>
@@ -255,7 +261,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
               </div>
             ))}
 
-            {/* ---> புது வரவு: AI ரியல்-டைமில் டைப் செய்யும் மெசேஜைக் காட்டும் பகுதி <--- */}
             {streamingResponse && (
               <div className="flex justify-start animate-fade-in">
                 <div className="max-w-[85%] sm:max-w-[75%] rounded-3xl rounded-bl-none border border-slate-700 bg-slate-900 text-slate-100 px-5 py-4">
@@ -269,6 +274,9 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
                 </div>
               </div>
             )}
+
+            {/* ---> ஆட்டோ ஸ்க்ரோல் டார்கெட் பாயிண்ட் <--- */}
+            <div ref={messagesEndRef} />
           </>
         )}
       </section>
