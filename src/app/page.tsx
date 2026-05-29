@@ -40,7 +40,16 @@ interface ChatWorkspaceProps {
 
 function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const { user } = useAuth();
-  const { activeAssistant, activeChatId, setActiveChatId } = useAssistant();
+  
+  // 1. Context-ல் இருந்து தேவையான அனைத்து வேரியபிள்களையும் இங்கே எடுக்கிறோம்
+  const { 
+    activeAssistant, 
+    activeChatId, 
+    setActiveChatId, 
+    chats, 
+    assistants, 
+    selectAssistant 
+  } = useAssistant();
   
   // லோக்கல் useChat-க்கு பதிலாக ஃபயர்ஸ்டோர் ஹூக்கைப் பயன்படுத்துகிறோம்
   const { 
@@ -55,6 +64,26 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string>("");
 
+  // 2. சாட் மாறும்போது அதற்குரிய அசிஸ்டண்ட்டை ஹெடருடன் சிங்க் செய்யும் மேஜிக் useEffect
+  useEffect(() => {
+    if (activeChatId && chats && chats.length > 0 && assistants && assistants.length > 0) {
+      // தற்போதைய ஆக்டிவ் சாட்டின் விபரங்களை எடுக்கிறோம்
+      const currentChatData = chats.find((c) => c.id === activeChatId);
+      
+      if (currentChatData && currentChatData.assistantId) {
+        // அந்த சாட்டிற்குரிய அசிஸ்டண்ட்டை கண்டுபிடிக்கிறோம்
+        const matchingAssistant = assistants.find((a) => a.assistantId === currentChatData.assistantId);
+        
+        // அது தற்போதைய ஆக்டிவ் அசிஸ்டண்ட்டாக இல்லை என்றால் மட்டும் அப்டேட் செய்கிறோம்
+        if (matchingAssistant && matchingAssistant.assistantId !== activeAssistant?.assistantId) {
+          if (selectAssistant) {
+            selectAssistant(matchingAssistant);
+          }
+        }
+      }
+    }
+  }, [activeChatId, chats, assistants, activeAssistant, selectAssistant]);
+  
   // Sync model with active assistant
   useEffect(() => {
     if (activeAssistant?.model) {
@@ -78,7 +107,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
     try {
       let currentTargetChatId = activeChatId;
 
-      // 1. ஒருவேளை ஆக்டிவ் சாட் ஐடி இல்லை என்றால் (New Conversation Mode) புது த்ரெட் உருவாக்குதல்
+      // ஒருவேளை ஆக்டிவ் சாட் ஐடி இல்லை என்றால் (New Conversation Mode) புது த்ரெட் உருவாக்குதல்
       if (!currentTargetChatId) {
         const titlePreview = trimmed.substring(0, 40) || "New Conversation";
         const newId = await createNewChatThread(titlePreview);
@@ -89,7 +118,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         if (setActiveChatId) setActiveChatId(newId);
       }
 
-      // 2. பயனரின் மெசேஜை ஃபயர்ஸ்டோரில் சேமித்தல்
+      // பயனரின் மெசேஜை ஃபயர்ஸ்டோரில் சேமித்தல்
       await sendMessageToFirestore(currentTargetChatId, "user", trimmed);
 
       // API-க்கு அனுப்ப தற்போதைய மெசேஜ்களை மேப் செய்தல்
@@ -102,7 +131,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         content: trimmed,
       });
 
-      // 3. ஏபிஐ கால் (API Request) செய்தல்
+      // ஏபிஐ கால் (API Request) செய்தல்
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -126,7 +155,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
       let buffer = "";
       let fullAssistantResponse = "";
 
-      // 4. ஸ்ட்ரீமிங் டேட்டாவைப் படித்தல்
+      // ஸ்ட்ரீமிங் டேட்டாவைப் படித்தல்
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -155,7 +184,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         }
       }
 
-      // 5. அசிஸ்டண்ட் ரெஸ்பான்ஸை ஃபயர்ஸ்டோரில் சேமித்தல்
+      // அசிஸ்டண்ட் ரெஸ்பான்ஸை ஃபயர்ஸ்டோரில் சேமித்தல்
       if (fullAssistantResponse) {
         await sendMessageToFirestore(currentTargetChatId, "assistant", fullAssistantResponse);
       }
