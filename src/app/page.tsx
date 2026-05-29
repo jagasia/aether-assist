@@ -1,12 +1,11 @@
 "use client";
 
 import { type FormEvent, useState, useEffect } from "react";
-import { ArrowRight, Sparkles, Settings, Menu, X } from "lucide-react";
+import { ArrowRight, Sparkles, Menu, X } from "lucide-react";
 import { AuthProvider, useAuth } from "../components/AuthContext";
 import { AssistantProvider, useAssistant } from "../components/AssistantContext";
 import AssistantsSidebar from "../components/AssistantsSidebar";
-import CreateAssistantForm from "../components/CreateAssistantForm";
-import { useChat } from "../hooks/useChat";
+import { useFirestoreChat } from "../hooks/useFirestoreChat";
 
 function AuthOverlay() {
   const { user, signInWithGoogle } = useAuth();
@@ -41,19 +40,20 @@ interface ChatWorkspaceProps {
 
 function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const { user } = useAuth();
-  const { activeAssistant } = useAssistant();
-  const { messages, currentChat, loading, initializeChat, saveMessage, updateChatTitle } = useChat(user?.uid, activeAssistant);
+  const { activeAssistant, activeChatId, setActiveChatId } = useAssistant();
+  
+  // லோக்கல் useChat-க்கு பதிலாக ஃபயர்ஸ்டோர் ஹூக்கைப் பயன்படுத்துகிறோம்
+  const { 
+    messages, 
+    loadingMessages, 
+    sendMessageToFirestore, 
+    createNewChatThread 
+  } = useFirestoreChat(user?.uid, activeAssistant?.assistantId, activeChatId);
+
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string>("");
-
-  // Initialize chat when assistant changes
-  useEffect(() => {
-    if (activeAssistant) {
-      initializeChat();
-    }
-  }, [activeAssistant, initializeChat]);
 
   // Sync model with active assistant
   useEffect(() => {
@@ -65,13 +65,9 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const sendMessage = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const trimmed = input.trim();
-    if (!trimmed || isLoading || !activeAssistant || !currentChat) {
-      if (!activeAssistant) {
-        setError("Please select an assistant first.");
-      }
-      if (!currentChat) {
-        setError("Initializing chat...");
-      }
+    
+    if (!trimmed || isLoading || !activeAssistant) {
+      if (!activeAssistant) setError("Please select an assistant first.");
       return;
     }
 
@@ -80,13 +76,23 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
     setIsLoading(true);
 
     try {
-      await saveMessage(trimmed, "user");
+      let currentTargetChatId = activeChatId;
 
-      if (messages.length === 0) {
-        const titlePreview = trimmed.substring(0, 50);
-        await updateChatTitle(titlePreview);
+      // 1. ஒருவேளை ஆக்டிவ் சாட் ஐடி இல்லை என்றால் (New Conversation Mode) புது த்ரெட் உருவாக்குதல்
+      if (!currentTargetChatId) {
+        const titlePreview = trimmed.substring(0, 40) || "New Conversation";
+        const newId = await createNewChatThread(titlePreview);
+        if (!newId) throw new Error("Failed to create a new chat session.");
+        
+        currentTargetChatId = newId;
+        // Context-ஐ அப்டேட் செய்வதால் சைட்பாரிலும் இது ஆக்டிவ் ஆகும்
+        if (setActiveChatId) setActiveChatId(newId);
       }
 
+      // 2. பயனரின் மெசேஜை ஃபயர்ஸ்டோரில் சேமித்தல்
+      await sendMessageToFirestore(currentTargetChatId, "user", trimmed);
+
+      // API-க்கு அனுப்ப தற்போதைய மெசேஜ்களை மேப் செய்தல்
       const apiMessages = messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -96,6 +102,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         content: trimmed,
       });
 
+      // 3. ஏபிஐ கால் (API Request) செய்தல்
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,14 +120,13 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
       }
 
       const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("No readable stream available.");
-      }
+      if (!reader) throw new Error("No readable stream available.");
 
       const decoder = new TextDecoder();
       let buffer = "";
       let fullAssistantResponse = "";
 
+      // 4. ஸ்ட்ரீமிங் டேட்டாவைப் படித்தல்
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -144,13 +150,14 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
               fullAssistantResponse += delta;
             }
           } catch {
-            // Ignore partial parse errors while streaming.
+            // Partial parse எர்ரர்களை இக்னோர் செய்தல்
           }
         }
       }
 
+      // 5. அசிஸ்டண்ட் ரெஸ்பான்ஸை ஃபயர்ஸ்டோரில் சேமித்தல்
       if (fullAssistantResponse) {
-        await saveMessage(fullAssistantResponse, "assistant");
+        await sendMessageToFirestore(currentTargetChatId, "assistant", fullAssistantResponse);
       }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Something went wrong.");
@@ -159,16 +166,13 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
     }
   };
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
     <main className="flex flex-1 flex-col overflow-hidden rounded-[32px] border border-slate-800 bg-slate-950/90 shadow-2xl shadow-slate-950/20 relative">
       {/* Header */}
       <div className="flex flex-row items-center justify-between border-b border-slate-800 px-6 py-5">
         <div className="flex items-center gap-3">
-          {/* Mobile Menu Button */}
           <button 
             onClick={onMenuClick}
             className="rounded-xl border border-slate-800 bg-slate-900/60 p-2 text-slate-400 hover:text-white lg:hidden"
@@ -196,9 +200,9 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
 
       {/* Messages Area */}
       <section className="flex-1 overflow-y-auto px-6 py-6 space-y-4 min-h-0 pb-32">
-        {loading ? (
+        {loadingMessages ? (
           <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
-            <p className="text-lg font-semibold text-white">Loading chat...</p>
+            <p className="text-lg font-semibold text-white animate-pulse">Loading chat...</p>
           </div>
         ) : messages.length === 0 ? (
           <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
@@ -207,13 +211,13 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
             </p>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
               {activeAssistant
-                ? `${activeAssistant.systemPrompt.substring(0, 100)}...`
+                ? `${activeAssistant.systemPrompt?.substring(0, 100)}...`
                 : "Select an assistant from the sidebar to start chatting."}
             </p>
           </div>
         ) : (
-          messages.map((message) => (
-            <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+          messages.map((message, idx) => (
+            <div key={idx} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[85%] sm:max-w-[75%] ${message.role === "user" ? "rounded-br-none" : "rounded-bl-none"} ${roleStyles[message.role === "user" ? "user" : "assistant"]} px-5 py-4`}>
                 <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
                   {message.role === "user" ? "You" : activeAssistant?.name || "Assistant"}
@@ -225,15 +229,15 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         )}
       </section>
 
-      {/* Fixed/Floating Input and Status Panel Area */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent px-6 pb-6 pt-4 border-t border-slate-900/50">
-        {activeAssistant && currentChat ? (
+      {/* Fixed/Floating Input Area */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent px-6 pb-6 pt-4 border-t border-t-slate-900/50">
+        {activeAssistant ? (
           <form className="flex items-center gap-3 rounded-[24px] border border-slate-800 bg-slate-900/90 p-2.5 shadow-xl" onSubmit={sendMessage}>
             <textarea
               rows={1}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask something..."
+              placeholder={activeChatId ? "Ask something..." : "Type to start a new conversation..."}
               className="h-12 flex-1 resize-none rounded-xl border border-slate-800 bg-slate-950/90 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-slate-600"
               style={{ minHeight: "48px" }}
             />
@@ -247,7 +251,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
           </form>
         ) : (
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-slate-400 text-center">
-            {activeAssistant ? "Initializing chat..." : "Select an assistant from the sidebar to start chatting."}
+            Select an assistant from the sidebar to start chatting.
           </div>
         )}
 

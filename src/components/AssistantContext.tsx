@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { db } from "../lib/firebase";
-// import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import type { Assistant } from "../types/index";
 import { useAuth } from "./AuthContext";
@@ -14,6 +13,8 @@ type AssistantContextType = {
   selectAssistant: (a: Assistant) => void;
   loading: boolean;
   refresh: () => void;
+  activeChatId: string | null; // புதுசு
+  setActiveChatId: (id: string | null) => void; // புதுசு
 };
 
 const AssistantContext = createContext<AssistantContextType | undefined>(undefined);
@@ -24,12 +25,16 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [chats, setChats] = useState<any[]>([]);
   const [activeAssistant, setActiveAssistant] = useState<Assistant | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // நாம் புதிதாக சேர்க்கும் சாட் ஸ்டேட்
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
       setAssistants([]);
       setChats([]);
       setActiveAssistant(null);
+      setActiveChatId(null);
       setLoading(false);
       return;
     }
@@ -39,6 +44,7 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setAssistants([]);
       setChats([]);
       setActiveAssistant(null);
+      setActiveChatId(null);
       setLoading(false);
       return;
     }
@@ -67,7 +73,8 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const unsubChats = onSnapshot(
       chatsQ,
       (snap) => {
-        const items = snap.docs.map((d) => d.data());
+        // இங்கே கிரிட்டிகல் சேஞ்ச்: c.id-ஐயும் சேர்த்து எடுக்கிறோம் (டெலீட் மற்றும் செலக்ட் செய்ய இது மிக முக்கியம்!)
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         setChats(items);
       },
       (error) => {
@@ -84,6 +91,8 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const selectAssistant = (a: Assistant) => {
     setActiveAssistant(a);
+    // அசிஸ்டண்ட்டை மாற்றும்போது பழைய சாட் ஐடியை க்ளியர் செய்து புது சாட் விண்டோவிற்கு வழி செய்கிறோம்
+    setActiveChatId(null); 
   };
 
   const refresh = () => {
@@ -91,7 +100,18 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   return (
-    <AssistantContext.Provider value={{ assistants, chats, activeAssistant, selectAssistant, loading, refresh }}>
+    <AssistantContext.Provider 
+      value={{ 
+        assistants, 
+        chats, 
+        activeAssistant, 
+        selectAssistant, 
+        loading, 
+        refresh,
+        activeChatId, // எக்ஸ்போர்ட் செய்கிறோம்
+        setActiveChatId // எக்ஸ்போர்ட் செய்கிறோம்
+      }}
+    >
       {children}
     </AssistantContext.Provider>
   );
