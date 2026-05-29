@@ -7,7 +7,7 @@ import { AssistantProvider, useAssistant } from "../components/AssistantContext"
 import AssistantsSidebar from "../components/AssistantsSidebar";
 import { useFirestoreChat } from "../hooks/useFirestoreChat";
 
-// ---> புது வரவு: மார்க்-டவுன் மற்றும் கோட் ஹைலைட்டிங் லைப்ரரிகள் <---
+// ---> மார்க்-டவுன் மற்றும் கோட் ஹைலைட்டிங் லைப்ரரிகள் <---
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -118,8 +118,11 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
 
     try {
       let currentTargetChatId = activeChatId;
+      // ---> புது வரவு: சாட் புதியதா இல்லையா என்று ட்ராக் செய்யும் பூலியன் ஃபிளாக் <---
+      let isNewChat = false; 
 
       if (!currentTargetChatId) {
+        isNewChat = true; // புதிய சாட் என்பதால் ட்ரூவாக மாற்றுகிறோம்
         const titlePreview = trimmed.substring(0, 40) || "New Conversation";
         const newId = await createNewChatThread(titlePreview);
         if (!newId) throw new Error("Failed to create a new chat session.");
@@ -139,6 +142,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         content: trimmed,
       });
 
+      // ---> மாற்றியமைக்கப்பட்டது: chatId மற்றும் isNewChat இப்போது பேக்-எண்டிற்கு கச்சிதமாக அனுப்பப்படுகிறது <---
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,6 +151,8 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
           messages: apiMessages,
           assistantId: activeAssistant.assistantId,
           systemPrompt: activeAssistant.systemPrompt,
+          chatId: currentTargetChatId, 
+          isNewChat: isNewChat,         
         }),
       });
 
@@ -204,7 +210,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
 
   if (!user) return null;
 
-  // ---> புது வரவு: மார்க்-டவுன் உள்ளே இருக்கும் கோடு பிளாக்குகளை ஸ்டைல் செய்யும் தனி காம்போனண்ட் <---
+  // ---> மார்க்-டவுன் உள்ளே இருக்கும் கோடு பிளாக்குகளை ஸ்டைல் செய்யும் தனி காம்போனண்ட் <---
   const MarkdownComponents = {
     code({ node, inline, className, children, ...props }: any) {
       const match = /language-(\w+)/.exec(className || "");
@@ -286,7 +292,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
                   <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
                     {message.role === "user" ? "You" : activeAssistant?.name || "Assistant"}
                   </div>
-                  {/* ---> மாற்றியமைக்கப்பட்டது: சாதாரண டெக்ஸ்டுக்குப் பதிலாக ReactMarkdown கொண்டு ரெண்டர் செய்கிறோம் <--- */}
                   <div className="prose prose-invert max-w-none text-[15px] leading-7 text-slate-100 space-y-2">
                     <ReactMarkdown components={MarkdownComponents}>
                       {message.content}
@@ -302,7 +307,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
                   <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
                     {activeAssistant?.name || "Assistant"}
                   </div>
-                  {/* ---> மாற்றியமைக்கப்பட்டது: ஸ்ட்ரீமிங் டேட்டாவிற்கும் ReactMarkdown சப்போர்ட் <--- */}
                   <div className="prose prose-invert max-w-none text-[15px] leading-7 text-slate-100 space-y-2">
                     <ReactMarkdown components={MarkdownComponents}>
                       {streamingResponse}
