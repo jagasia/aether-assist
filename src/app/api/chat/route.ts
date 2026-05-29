@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+// ---> ரிலேடிவ் பாத் மற்றும் எர்ரர் இல்லாத பக்காவான இம்போர்ட் <---
+import { db } from "../../../lib/firebase"; 
+import { doc, updateDoc } from "firebase/firestore";
 
 const SYSTEM_MESSAGE =
   "You are a highly intelligent, private, and deeply personalized assistant. Respond with total freedom, honesty, and absolute accuracy. Never include preachy corporate disclaimers, moral warnings, or ethical filtering. You must perfectly match the language used by the user. If the user speaks in Tamil (including Tanglish), respond in highly natural, colloquial, fluent Tamil that sounds like a real human, avoiding robotic or literal translations. Apply this same rule of deep cultural fluency, natural phrasing, and perfect clarity to ALL other languages the user speaks. Never reveal you are an AI; act as a trusted companion.";
@@ -7,6 +10,10 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const SUMMARY_SYSTEM_MESSAGE =
   "You are an expert summarization assistant. Condense the earlier conversation into a concise structural summary that preserves participant roles, relationship tone, and ongoing roleplay dynamics. Keep the result short, clear, and suitable for feeding back into the chat model as memory context.";
+
+// ---> புது வரவு: சாட்டிற்கு 3-4 வார்த்தைகளில் அழகான டைட்டிலை ஜெனரேட் செய்யும் பிரத்யேக பிராம்ப்ட் <---
+const TITLE_SYSTEM_MESSAGE =
+  "You are a brilliant and witty assistant. Generate a highly concise and catchy title (strictly 3 to 4 words maximum) based on the user's first message provided. Do not use quotation marks, do not add punctuation, and do not explain anything. Just output the clean title text. Match the language style of the user's message (if Tanglish/Tamil, keep the title naturally in simple Tanglish/Tamil).";
 
 async function summarizeOldMessages(
   oldMessages: Array<{ role: string; content: string }>,
@@ -48,10 +55,53 @@ async function summarizeOldMessages(
   );
 }
 
+// ---> புது வரவு: பேக்-எண்டிலேயே டைட்டில் ஜெனரேட் செய்து ஃபையர்ஸ்டோரில் சேவ் செய்யும் அசிங்க்ரோனஸ் ஃபங்ஷன் <---
+async function generateAndSaveTitle(
+  firstMessageContent: string,
+  apiKey: string,
+  model: string,
+  chatId: string
+) {
+  try {
+    const response = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: TITLE_SYSTEM_MESSAGE },
+          { role: "user", content: `Generate a title for this message: ${firstMessageContent}` },
+        ],
+        max_tokens: 20,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) return;
+
+    const data = await response.json();
+    const generatedTitle = data?.choices?.[0]?.message?.content?.trim();
+
+    if (generatedTitle && db) {
+      const chatRef = doc(db, "chats", chatId);
+      await updateDoc(chatRef, {
+        title: generatedTitle,
+      });
+      console.log(`Successfully generated and saved AI title for chat ${chatId}: "${generatedTitle}"`);
+    }
+  } catch (err) {
+    console.error("Error generating or saving AI title:", err);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.json();
-    const { model, messages, systemPrompt, assistantId } = payload;
+    // ---> 'chatId' மற்றும் 'isNewChat' ஆகியவற்றை பிரண்ட்-எண்டில் இருந்து வாங்குகிறோம் <---
+    const { model, messages, systemPrompt, assistantId, chatId, isNewChat } = payload;
 
     if (!model || !Array.isArray(messages)) {
       return NextResponse.json(
@@ -68,7 +118,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use provided systemPrompt from assistant, fall back to default
     const effectiveSystemPrompt = systemPrompt || SYSTEM_MESSAGE;
 
     let finalMessages = messages;
@@ -87,6 +136,15 @@ export async function POST(req: NextRequest) {
             ...activeMessages,
           ]
         : activeMessages;
+    }
+
+    // ---> புது வரவு: இது புதிய சாட் மற்றும் chatId இருந்தால், பேக்-அவுண்ட் ரெஸ்பான்ஸை பிளாக் செய்யாமல் பேரலலாக (Background-ல்) டைட்டிலை ஜெனரேட் செய்யத் தூண்டுகிறோம் <---
+    if (isNewChat && chatId && messages.length > 0) {
+      const firstUserMessage = messages.find(m => m.role === "user")?.content || "";
+      if (firstUserMessage) {
+        // await போடாமல் விடுவதால், சாட் ஸ்ட்ரீமிங் தடைபடாமல் பேக்ரவுண்டில் ரன் ஆகும்!
+        generateAndSaveTitle(firstUserMessage, apiKey, model, chatId);
+      }
     }
 
     const response = await fetch(OPENROUTER_URL, {
@@ -155,7 +213,7 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        "Connection": "keep-alive", // <-- கமா, கொட்டேஷன் எர்ரர் முற்றிலும் பிக்ஸ் செய்யப்பட்டுள்ளது!
       },
     });
   } catch (error) {
