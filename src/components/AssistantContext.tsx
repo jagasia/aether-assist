@@ -13,8 +13,10 @@ type AssistantContextType = {
   selectAssistant: (a: Assistant) => void;
   loading: boolean;
   refresh: () => void;
-  activeChatId: string | null; // புதுசு
-  setActiveChatId: (id: string | null) => void; // புதுசு
+  activeChatId: string | null;
+  setActiveChatId: (id: string | null) => void;
+  selectedVoice: string;              // புதியது
+  setSelectedVoice: (id: string) => void; // புதியது
 };
 
 const AssistantContext = createContext<AssistantContextType | undefined>(undefined);
@@ -26,8 +28,9 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [activeAssistant, setActiveAssistant] = useState<Assistant | null>(null);
   const [loading, setLoading] = useState(true);
   
-  // நாம் புதிதாக சேர்க்கும் சாட் ஸ்டேட்
+  // வாய்ஸ் மற்றும் சாட் ஸ்டேட்ஸ்
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState("pNInz6obpgDQGcFmaJgB"); // Adam Default
 
   useEffect(() => {
     if (!user) {
@@ -40,11 +43,6 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     if (!db) {
-      console.warn("Firestore has not been initialized.");
-      setAssistants([]);
-      setChats([]);
-      setActiveAssistant(null);
-      setActiveChatId(null);
       setLoading(false);
       return;
     }
@@ -53,35 +51,19 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const assistantsRef = collection(db, "assistants");
     const assistantsQ = query(assistantsRef, where("userId", "==", user.uid), orderBy("createdAt", "desc"));
-    const unsubAssistants = onSnapshot(
-      assistantsQ,
-      (snap) => {
-        const items: Assistant[] = snap.docs.map((d) => d.data() as Assistant);
-        setAssistants(items);
-        if (!activeAssistant && items.length > 0) setActiveAssistant(items[0]);
-        setLoading(false);
-      },
-      (error) => {
-        console.warn("Firestore assistants listener failed", error);
-        setAssistants([]);
-        setLoading(false);
-      }
-    );
+    const unsubAssistants = onSnapshot(assistantsQ, (snap) => {
+      const items: Assistant[] = snap.docs.map((d) => d.data() as Assistant);
+      setAssistants(items);
+      if (!activeAssistant && items.length > 0) setActiveAssistant(items[0]);
+      setLoading(false);
+    });
 
     const chatsRef = collection(db, "chats");
     const chatsQ = query(chatsRef, where("userId", "==", user.uid), orderBy("lastMessageAt", "desc"));
-    const unsubChats = onSnapshot(
-      chatsQ,
-      (snap) => {
-        // இங்கே கிரிட்டிகல் சேஞ்ச்: c.id-ஐயும் சேர்த்து எடுக்கிறோம் (டெலீட் மற்றும் செலக்ட் செய்ய இது மிக முக்கியம்!)
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setChats(items);
-      },
-      (error) => {
-        console.warn("Firestore chats listener failed", error);
-        setChats([]);
-      }
-    );
+    const unsubChats = onSnapshot(chatsQ, (snap) => {
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setChats(items);
+    });
 
     return () => {
       unsubAssistants();
@@ -91,13 +73,10 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const selectAssistant = (a: Assistant) => {
     setActiveAssistant(a);
-    // அசிஸ்டண்ட்டை மாற்றும்போது பழைய சாட் ஐடியை க்ளியர் செய்து புது சாட் விண்டோவிற்கு வழி செய்கிறோம்
     setActiveChatId(null); 
   };
 
-  const refresh = () => {
-    // placeholder; onSnapshot keeps in sync
-  };
+  const refresh = () => {};
 
   return (
     <AssistantContext.Provider 
@@ -108,8 +87,10 @@ export const AssistantProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         selectAssistant, 
         loading, 
         refresh,
-        activeChatId, // எக்ஸ்போர்ட் செய்கிறோம்
-        setActiveChatId // எக்ஸ்போர்ட் செய்கிறோம்
+        activeChatId,
+        setActiveChatId,
+        selectedVoice,
+        setSelectedVoice
       }}
     >
       {children}

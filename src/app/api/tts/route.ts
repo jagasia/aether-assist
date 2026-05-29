@@ -7,7 +7,7 @@ const client = new ElevenLabsClient({
 
 export async function POST(req: Request) {
   try {
-    const { text } = await req.json();
+    const { text, voiceId } = await req.json();
 
     if (!text) {
       return NextResponse.json({ error: "Text is required" }, { status: 400 });
@@ -15,19 +15,18 @@ export async function POST(req: Request) {
 
     // ElevenLabs streaming generation
     const audioStream = await client.textToSpeech.convertAsStream(
-      'pNInz6obpgDQGcFmaJgB', // Adam voice ID (இது ஒரு அருமையான பேலன்ஸ்டு வாய்ஸ்)
+      voiceId || 'pNInz6obpgDQGcFmaJgB', // டிஃபால்ட்டாக Adam வாய்ஸ்
       {
         text: text,
         model_id: 'eleven_multilingual_v2',
         voice_settings: { 
           stability: 0.5, 
           similarity_boost: 0.75,
-          style: 0.5 // இது எக்ஸ்பிரஷன்ஸை அதிகப்படுத்தும்
+          style: 0.5
         },
       }
     );
 
-    // ஆடியோவை ஸ்ட்ரீமாகவே பிரவுசருக்கு அனுப்புகிறோம்
     return new Response(audioStream as any, {
       headers: { 
         'Content-Type': 'audio/mpeg',

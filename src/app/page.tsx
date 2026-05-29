@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useState, useEffect, useRef } from "react";
-import { ArrowRight, Sparkles, Menu, X, Copy, Download, Volume2, Loader2 } from "lucide-react";
+import { ArrowRight, Sparkles, Menu, X, Copy, Download, Volume2, Loader2, Square } from "lucide-react";
 import { AuthProvider, useAuth } from "../components/AuthContext";
 import { AssistantProvider, useAssistant } from "../components/AssistantContext";
 import AssistantsSidebar from "../components/AssistantsSidebar";
@@ -53,23 +53,33 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const [model, setModel] = useState<string>("");
   const [streamingResponse, setStreamingResponse] = useState<string>("");
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState('pNInz6obpgDQGcFmaJgB');
+  
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
   useEffect(() => { scrollToBottom(); }, [messages, streamingResponse]);
 
   const playAudio = async (text: string, messageId: string) => {
+    if (isSpeaking === messageId) {
+        audioRef.current?.pause();
+        setIsSpeaking(null);
+        return;
+    }
+
     setIsSpeaking(messageId);
     try {
       const response = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, voiceId: selectedVoice }),
       });
       if (!response.ok) throw new Error("Audio generation failed");
       const audioBlob = await response.blob();
       const audio = new Audio(URL.createObjectURL(audioBlob));
+      audioRef.current = audio;
       audio.play();
       audio.onended = () => setIsSpeaking(null);
     } catch (error) {
@@ -78,7 +88,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
     }
   };
 
-  // ... (முந்தைய useEffect மற்றும் sendMessage லாஜிக் அப்படியே இருக்கட்டும்)
   useEffect(() => {
     if (activeChatId && chats && chats.length > 0 && assistants && assistants.length > 0) {
       const currentChatData = chats.find((c) => c.id === activeChatId);
@@ -184,6 +193,15 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
           <div>
             <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Live assistant</p>
             <h2 className="mt-1 text-2xl sm:text-3xl font-semibold text-white">{activeAssistant?.name || "Aether Assist"}</h2>
+            <select 
+                value={selectedVoice}
+                onChange={(e) => setSelectedVoice(e.target.value)}
+                className="mt-2 bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded-lg p-1 outline-none hover:border-slate-500 cursor-pointer"
+            >
+                <option value="pNInz6obpgDQGcFmaJgB">Adam (Professional)</option>
+                <option value="21m00Tcm4TlvDq8ikWAM">Rachel (Soft & Calm)</option>
+                <option value="EXAVITQu4vr4xnSDxMaL">Bella (Expressive)</option>
+            </select>
           </div>
         </div>
       </div>
@@ -206,10 +224,9 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
                     {m.role === "assistant" && (
                         <button 
                             onClick={() => playAudio(m.content, i.toString())}
-                            disabled={isSpeaking !== null}
                             className="mt-2 text-slate-500 hover:text-indigo-400 transition-colors"
                         >
-                            {isSpeaking === i.toString() ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                            {isSpeaking === i.toString() ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
                         </button>
                     )}
                 </div>
