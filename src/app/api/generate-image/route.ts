@@ -9,7 +9,10 @@ export async function POST(req: Request) {
   try {
     const { prompt } = await req.json();
 
-    // இங்கே நாம Flux-1.1-pro மாடலைப் பயன்படுத்தலாம், இது தரம் மற்றும் வேகத்திற்கு சிறந்தது
+    if (!prompt) {
+      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    }
+
     const output = await replicate.run(
       "black-forest-labs/flux-1.1-pro",
       {
@@ -21,7 +24,18 @@ export async function POST(req: Request) {
       }
     );
 
-    return NextResponse.json({ url: output });
+    // Debugging: இது Vercel logs-ல் என்ன பார்மட்ல வருதுன்னு காட்டும்
+    console.log("Replicate full output:", JSON.stringify(output));
+
+    // Type safe string conversion
+    let imageUrl: string = "";
+    if (Array.isArray(output)) {
+      imageUrl = String(output[0]);
+    } else {
+      imageUrl = String(output);
+    }
+
+    return NextResponse.json({ url: imageUrl });
   } catch (error) {
     console.error("Image generation error:", error);
     return NextResponse.json({ error: "Failed to generate image" }, { status: 500 });
