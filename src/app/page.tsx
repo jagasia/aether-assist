@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useState, useEffect } from "react";
-import { ArrowRight, Sparkles, Settings } from "lucide-react";
+import { ArrowRight, Sparkles, Settings, Menu, X } from "lucide-react";
 import { AuthProvider, useAuth } from "../components/AuthContext";
 import { AssistantProvider, useAssistant } from "../components/AssistantContext";
 import AssistantsSidebar from "../components/AssistantsSidebar";
@@ -35,7 +35,11 @@ const roleStyles: Record<string, string> = {
   assistant: "bg-slate-900 text-slate-100 self-start rounded-3xl rounded-bl-none border border-slate-700",
 };
 
-function ChatWorkspace() {
+interface ChatWorkspaceProps {
+  onMenuClick: () => void;
+}
+
+function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const { user } = useAuth();
   const { activeAssistant } = useAssistant();
   const { messages, currentChat, loading, initializeChat, saveMessage, updateChatTitle } = useChat(user?.uid, activeAssistant);
@@ -76,16 +80,13 @@ function ChatWorkspace() {
     setIsLoading(true);
 
     try {
-      // Save user message to Firestore first
       await saveMessage(trimmed, "user");
 
-      // Update chat title if it's the first message (title starts with "Chat with")
       if (messages.length === 0) {
         const titlePreview = trimmed.substring(0, 50);
         await updateChatTitle(titlePreview);
       }
 
-      // Build the messages array for the API (all previous messages + current)
       const apiMessages = messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -148,7 +149,6 @@ function ChatWorkspace() {
         }
       }
 
-      // Save the complete assistant response to Firestore after streaming ends
       if (fullAssistantResponse) {
         await saveMessage(fullAssistantResponse, "assistant");
       }
@@ -160,23 +160,33 @@ function ChatWorkspace() {
   };
 
   if (!user) {
-    return null; // Auth overlay will show
+    return null;
   }
 
   return (
-    <main className="flex flex-1 flex-col overflow-hidden rounded-[32px] border border-slate-800 bg-slate-950/90 shadow-2xl shadow-slate-950/20">
-      <div className="flex flex-col gap-4 border-b border-slate-800 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Live assistant</p>
-          <h2 className="mt-2 text-3xl font-semibold text-white">
-            {activeAssistant?.name || "Aether Assist"}
-          </h2>
+    <main className="flex flex-1 flex-col overflow-hidden rounded-[32px] border border-slate-800 bg-slate-950/90 shadow-2xl shadow-slate-950/20 relative">
+      {/* Header */}
+      <div className="flex flex-row items-center justify-between border-b border-slate-800 px-6 py-5">
+        <div className="flex items-center gap-3">
+          {/* Mobile Menu Button */}
+          <button 
+            onClick={onMenuClick}
+            className="rounded-xl border border-slate-800 bg-slate-900/60 p-2 text-slate-400 hover:text-white lg:hidden"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Live assistant</p>
+            <h2 className="mt-1 text-2xl sm:text-3xl font-semibold text-white">
+              {activeAssistant?.name || "Aether Assist"}
+            </h2>
+          </div>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="hidden sm:flex flex-col gap-3 sm:flex-row sm:items-center">
           {activeAssistant && (
             <div className="flex min-w-[240px] flex-col gap-2 text-sm text-slate-400">
               <span className="text-xs font-medium">Model</span>
-              <div className="rounded-2xl border border-slate-700 bg-slate-900/95 px-4 py-3 text-slate-100">
+              <div className="rounded-2xl border border-slate-700 bg-slate-900/95 px-4 py-2.5 text-slate-100 text-xs">
                 {activeAssistant.model}
               </div>
             </div>
@@ -184,83 +194,90 @@ function ChatWorkspace() {
         </div>
       </div>
 
-      <section className="flex flex-1 flex-col overflow-hidden px-6 py-6">
-        <div className="flex-1 space-y-4 overflow-y-auto pr-2">
-          {loading ? (
-            <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
-              <p className="text-lg font-semibold text-white">Loading chat...</p>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
-              <p className="text-lg font-semibold text-white">
-                {activeAssistant ? `Chat with ${activeAssistant.name}` : "Ready when you are"}
-              </p>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
-                {activeAssistant
-                  ? `${activeAssistant.systemPrompt.substring(0, 100)}...`
-                  : "Select an assistant from the sidebar to start chatting."}
-              </p>
-            </div>
-          ) : (
-            messages.map((message) => (
-              <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[90%] ${message.role === "user" ? "rounded-br-none" : "rounded-bl-none"} ${roleStyles[message.role === "user" ? "user" : "assistant"]} px-5 py-4`}>
-                  <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                    {message.role === "user" ? "You" : activeAssistant?.name || "Assistant"}
-                  </div>
-                  <div className="whitespace-pre-wrap text-sm leading-7 text-slate-100">{message.content}</div>
+      {/* Messages Area */}
+      <section className="flex-1 overflow-y-auto px-6 py-6 space-y-4 min-h-0 pb-32">
+        {loading ? (
+          <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
+            <p className="text-lg font-semibold text-white">Loading chat...</p>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
+            <p className="text-lg font-semibold text-white">
+              {activeAssistant ? `Chat with ${activeAssistant.name}` : "Ready when you are"}
+            </p>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">
+              {activeAssistant
+                ? `${activeAssistant.systemPrompt.substring(0, 100)}...`
+                : "Select an assistant from the sidebar to start chatting."}
+            </p>
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] sm:max-w-[75%] ${message.role === "user" ? "rounded-br-none" : "rounded-bl-none"} ${roleStyles[message.role === "user" ? "user" : "assistant"]} px-5 py-4`}>
+                <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                  {message.role === "user" ? "You" : activeAssistant?.name || "Assistant"}
                 </div>
+                <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-100">{message.content}</div>
               </div>
-            ))
-          )}
-        </div>
+            </div>
+          ))
+        )}
+      </section>
 
+      {/* Fixed/Floating Input and Status Panel Area */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent px-6 pb-6 pt-4 border-t border-slate-900/50">
         {activeAssistant && currentChat ? (
-          <form className="mt-6 flex items-end gap-3 rounded-[28px] border border-slate-800 bg-slate-900/80 p-4 shadow-inner shadow-slate-950/20" onSubmit={sendMessage}>
+          <form className="flex items-center gap-3 rounded-[24px] border border-slate-800 bg-slate-900/90 p-2.5 shadow-xl" onSubmit={sendMessage}>
             <textarea
               rows={1}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Ask something..."
-              className="min-h-[60px] flex-1 resize-none rounded-2xl border border-slate-800 bg-slate-950/90 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-slate-500"
+              className="h-12 flex-1 resize-none rounded-xl border border-slate-800 bg-slate-950/90 px-4 py-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-slate-600"
+              style={{ minHeight: "48px" }}
             />
             <button
               type="submit"
               disabled={isLoading}
-              className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-950 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <ArrowRight className="h-5 w-5" />
             </button>
           </form>
         ) : (
-          <div className="mt-6 rounded-3xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-400 text-center">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-slate-400 text-center">
             {activeAssistant ? "Initializing chat..." : "Select an assistant from the sidebar to start chatting."}
           </div>
         )}
 
-        {isLoading ? (
-          <div className="mt-4 rounded-3xl border border-slate-800 bg-slate-900/80 px-4 py-3 text-sm text-slate-400">
+        {isLoading && (
+          <div className="absolute -top-10 left-6 right-6 rounded-xl border border-slate-800 bg-slate-900/95 px-4 py-2 text-xs text-slate-400 w-fit shadow-lg animate-pulse">
             Generating response...
           </div>
-        ) : null}
-        {error ? (
-          <div className="mt-4 rounded-3xl border border-rose-500/40 bg-rose-500/5 px-4 py-3 text-sm text-rose-200">
+        )}
+        {error && (
+          <div className="absolute -top-12 left-6 right-6 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-xs text-rose-200 w-fit shadow-lg">
             {error}
           </div>
-        ) : null}
-      </section>
+        )}
+      </div>
     </main>
   );
 }
 
 export default function Home() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-screen max-w-[1600px] gap-6 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-950 text-slate-100 overflow-hidden">
+      <div className="mx-auto flex h-screen max-w-[1600px] gap-6 p-4 sm:p-6 lg:p-8 overflow-hidden">
         <AuthProvider>
           <AssistantProvider>
             <AuthOverlay />
-            <aside className="hidden w-80 shrink-0 flex-col gap-6 rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl shadow-slate-950/20 lg:flex">
+            
+            {/* Desktop Sidebar */}
+            <aside className="hidden w-80 shrink-0 flex-col gap-6 rounded-3xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl shadow-slate-950/20 lg:flex overflow-y-auto">
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -276,42 +293,42 @@ export default function Home() {
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Chat History</p>
-                  <div className="mt-4 space-y-3 text-sm text-slate-400">
-                    <button
-                      type="button"
-                      className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-left transition hover:border-slate-700 hover:bg-slate-800"
-                    >
-                      New conversation
-                    </button>
-                    <button
-                      type="button"
-                      className="w-full rounded-2xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-left transition hover:border-slate-700 hover:bg-slate-800"
-                    >
-                      Placeholder thread
-                    </button>
-                  </div>
-                </div>
-
+              <div className="space-y-3 flex-1">
                 <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
                   <AssistantsSidebar />
-                </div>
-
-                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Settings</p>
-                    <Settings className="h-4 w-4 text-slate-400" />
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-400">
-                    Model selection and conversation controls live in the workspace. This interface is designed for calm, private workflows.
-                  </p>
                 </div>
               </div>
             </aside>
 
-            <ChatWorkspace />
+            {/* Mobile Backdrop Overlay for Sidebar */}
+            {sidebarOpen && (
+              <div 
+                className="fixed inset-0 z-40 bg-black/60 lg:hidden backdrop-blur-sm"
+                onClick={() => setSidebarOpen(false)}
+              />
+            )}
+
+            {/* Mobile Slide-over Drawer Sidebar */}
+            <div className={`fixed inset-y-0 left-0 z-50 w-80 max-w-[calc(100vw-3rem)] transform bg-slate-900 border-r border-slate-800 p-6 shadow-2xl transition-transform duration-300 ease-in-out lg:hidden flex flex-col gap-6 overflow-y-auto ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">Aether Assist</p>
+                  <h1 className="mt-1 text-xl font-semibold text-white">Personal Assistant</h1>
+                </div>
+                <button 
+                  onClick={() => setSidebarOpen(false)}
+                  className="rounded-xl border border-slate-800 bg-slate-800 p-2 text-slate-400 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 pb-4">
+                <AssistantsSidebar />
+              </div>
+            </div>
+
+            {/* Main Chat Area */}
+            <ChatWorkspace onMenuClick={() => setSidebarOpen(true)} />
           </AssistantProvider>
         </AuthProvider>
       </div>

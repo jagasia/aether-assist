@@ -2,8 +2,9 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { db } from "../lib/firebase";
+// import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
-import type { Assistant } from "../types";
+import type { Assistant } from "../types/index";
 import { useAuth } from "./AuthContext";
 
 type AssistantContextType = {
