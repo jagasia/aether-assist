@@ -1,11 +1,16 @@
 "use client";
 
-import { type FormEvent, useState, useEffect, useRef } from "react"; // ---> useRef-ஐ சேர்த்துள்ளோம்
+import { type FormEvent, useState, useEffect, useRef } from "react";
 import { ArrowRight, Sparkles, Menu, X } from "lucide-react";
 import { AuthProvider, useAuth } from "../components/AuthContext";
 import { AssistantProvider, useAssistant } from "../components/AssistantContext";
 import AssistantsSidebar from "../components/AssistantsSidebar";
 import { useFirestoreChat } from "../hooks/useFirestoreChat";
+
+// ---> புது வரவு: மார்க்-டவுன் மற்றும் கோட் ஹைலைட்டிங் லைப்ரரிகள் <---
+import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 function AuthOverlay() {
   const { user, signInWithGoogle } = useAuth();
@@ -63,17 +68,15 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const [model, setModel] = useState<string>("");
   const [streamingResponse, setStreamingResponse] = useState<string>("");
 
-  // ---> புது வரவு: சாட் ஏரியாவின் கடைசிப் பகுதியை ட்ராக் செய்ய Ref <---
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // ---> புது வரவு: புது மெசேஜ் வரும்போதோ அல்லது ஸ்ட்ரீமிங் நடக்கும்போதோ ஆட்டோ-ஸ்க்ரோல் செய்யும் useEffect <---
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingResponse]); // மெசேஜ்கள் மாறினாலும், ஸ்ட்ரீம் ஆனாலும் கீழே ஸ்க்ரோல் ஆகும்!
+  }, [messages, streamingResponse]);
 
   // சாட் மாறும்போது அதற்குரிய அசிஸ்டண்ட்டை ஹெடருடன் சிங்க் செய்யும் useEffect
   useEffect(() => {
@@ -201,6 +204,33 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
 
   if (!user) return null;
 
+  // ---> புது வரவு: மார்க்-டவுன் உள்ளே இருக்கும் கோடு பிளாக்குகளை ஸ்டைல் செய்யும் தனி காம்போனண்ட் <---
+  const MarkdownComponents = {
+    code({ node, inline, className, children, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || "");
+      return !inline && match ? (
+        <div className="my-3 overflow-hidden rounded-xl border border-slate-800 shadow-lg">
+          <div className="bg-slate-900 px-4 py-1.5 text-xs font-mono text-slate-400 border-b border-slate-800 flex justify-between items-center">
+            <span>{match[1].toUpperCase()}</span>
+          </div>
+          <SyntaxHighlighter
+            style={vscDarkPlus as any}
+            language={match[1]}
+            PreTag="div"
+            customStyle={{ margin: 0, padding: "1rem", background: "#020617", fontSize: "14px", lineHeight: "1.5" }}
+            {...props}
+          >
+            {String(children).replace(/\n$/, "")}
+          </SyntaxHighlighter>
+        </div>
+      ) : (
+        <code className="bg-slate-950/80 text-rose-400 px-1.5 py-0.5 rounded font-mono text-sm" {...props}>
+          {children}
+        </code>
+      );
+    }
+  };
+
   return (
     <main className="flex flex-1 flex-col overflow-hidden rounded-[32px] border border-slate-800 bg-slate-950/90 shadow-2xl shadow-slate-950/20 relative">
       {/* Header */}
@@ -256,7 +286,12 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
                   <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
                     {message.role === "user" ? "You" : activeAssistant?.name || "Assistant"}
                   </div>
-                  <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-100">{message.content}</div>
+                  {/* ---> மாற்றியமைக்கப்பட்டது: சாதாரண டெக்ஸ்டுக்குப் பதிலாக ReactMarkdown கொண்டு ரெண்டர் செய்கிறோம் <--- */}
+                  <div className="prose prose-invert max-w-none text-[15px] leading-7 text-slate-100 space-y-2">
+                    <ReactMarkdown components={MarkdownComponents}>
+                      {message.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               </div>
             ))}
@@ -267,15 +302,17 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
                   <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
                     {activeAssistant?.name || "Assistant"}
                   </div>
-                  <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-100">
-                    {streamingResponse}
+                  {/* ---> மாற்றியமைக்கப்பட்டது: ஸ்ட்ரீமிங் டேட்டாவிற்கும் ReactMarkdown சப்போர்ட் <--- */}
+                  <div className="prose prose-invert max-w-none text-[15px] leading-7 text-slate-100 space-y-2">
+                    <ReactMarkdown components={MarkdownComponents}>
+                      {streamingResponse}
+                    </ReactMarkdown>
                     <span className="inline-block w-2 h-4 ml-1 bg-slate-400 animate-pulse" />
                   </div>
                 </div>
               </div>
             )}
 
-            {/* ---> ஆட்டோ ஸ்க்ரோல் டார்கெட் பாயிண்ட் <--- */}
             <div ref={messagesEndRef} />
           </>
         )}
