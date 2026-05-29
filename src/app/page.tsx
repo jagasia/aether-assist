@@ -41,7 +41,6 @@ interface ChatWorkspaceProps {
 function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const { user } = useAuth();
   
-  // 1. Context-ல் இருந்து தேவையான அனைத்து வேரியபிள்களையும் இங்கே எடுக்கிறோம்
   const { 
     activeAssistant, 
     activeChatId, 
@@ -51,7 +50,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
     selectAssistant 
   } = useAssistant();
   
-  // லோக்கல் useChat-க்கு பதிலாக ஃபயர்ஸ்டோர் ஹூக்கைப் பயன்படுத்துகிறோம்
   const { 
     messages, 
     loadingMessages, 
@@ -63,18 +61,18 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string>("");
+  
+  // ---> புது வரவு: அசிஸ்டண்ட் டைப் செய்வதை ரியல்-டைமில் காட்ட இந்த லோக்கல் ஸ்டேட் <---
+  const [streamingResponse, setStreamingResponse] = useState<string>("");
 
-  // 2. சாட் மாறும்போது அதற்குரிய அசிஸ்டண்ட்டை ஹெடருடன் சிங்க் செய்யும் மேஜிக் useEffect
+  // சாட் மாறும்போது அதற்குரிய அசிஸ்டண்ட்டை ஹெடருடன் சிங்க் செய்யும் useEffect
   useEffect(() => {
     if (activeChatId && chats && chats.length > 0 && assistants && assistants.length > 0) {
-      // தற்போதைய ஆக்டிவ் சாட்டின் விபரங்களை எடுக்கிறோம்
       const currentChatData = chats.find((c) => c.id === activeChatId);
       
       if (currentChatData && currentChatData.assistantId) {
-        // அந்த சாட்டிற்குரிய அசிஸ்டண்ட்டை கண்டுபிடிக்கிறோம்
         const matchingAssistant = assistants.find((a) => a.assistantId === currentChatData.assistantId);
         
-        // அது தற்போதைய ஆக்டிவ் அசிஸ்டண்ட்டாக இல்லை என்றால் மட்டும் அப்டேட் செய்கிறோம்
         if (matchingAssistant && matchingAssistant.assistantId !== activeAssistant?.assistantId) {
           if (selectAssistant) {
             selectAssistant(matchingAssistant);
@@ -103,25 +101,22 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
     setInput("");
     setError(null);
     setIsLoading(true);
+    setStreamingResponse(""); // புது சாட் என்பதால் க்ளியர் செய்கிறோம்
 
     try {
       let currentTargetChatId = activeChatId;
 
-      // ஒருவேளை ஆக்டிவ் சாட் ஐடி இல்லை என்றால் (New Conversation Mode) புது த்ரெட் உருவாக்குதல்
       if (!currentTargetChatId) {
         const titlePreview = trimmed.substring(0, 40) || "New Conversation";
         const newId = await createNewChatThread(titlePreview);
         if (!newId) throw new Error("Failed to create a new chat session.");
         
         currentTargetChatId = newId;
-        // Context-ஐ அப்டேட் செய்வதால் சைட்பாரிலும் இது ஆக்டிவ் ஆகும்
         if (setActiveChatId) setActiveChatId(newId);
       }
 
-      // பயனரின் மெசேஜை ஃபயர்ஸ்டோரில் சேமித்தல்
       await sendMessageToFirestore(currentTargetChatId, "user", trimmed);
 
-      // API-க்கு அனுப்ப தற்போதைய மெசேஜ்களை மேப் செய்தல்
       const apiMessages = messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -131,7 +126,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         content: trimmed,
       });
 
-      // ஏபிஐ கால் (API Request) செய்தல்
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,6 +171,8 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
             const delta = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content;
             if (typeof delta === "string" && delta.length > 0) {
               fullAssistantResponse += delta;
+              // ---> மேஜிக் இங்கே நடக்குது: லோக்கல் ஸ்டேட்டை உடனுக்குடன் அப்டேட் செய்து UI-ல் காட்டுகிறோம் <---
+              setStreamingResponse(fullAssistantResponse);
             }
           } catch {
             // Partial parse எர்ரர்களை இக்னோர் செய்தல்
@@ -184,14 +180,15 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
         }
       }
 
-      // அசிஸ்டண்ட் ரெஸ்பான்ஸை ஃபயர்ஸ்டோரில் சேமித்தல்
+      // முழுமையாக ரெஸ்பான்ஸ் வந்தவுடன் ஃபயர்ஸ்டோரில் நிரந்தரமாகச் சேமித்தல்
       if (fullAssistantResponse) {
         await sendMessageToFirestore(currentTargetChatId, "assistant", fullAssistantResponse);
       }
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : "Something went wrong.");
-    } finally {
+    } resolve: {
       setIsLoading(false);
+      setStreamingResponse(""); // ஃபயர்ஸ்டோரில் சேவ் ஆகிவிட்டதால் லோக்கல் ஸ்ட்ரீமிங் ஸ்டேட்டை க்ளியர் செய்கிறோம்
     }
   };
 
@@ -233,7 +230,7 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
           <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
             <p className="text-lg font-semibold text-white animate-pulse">Loading chat...</p>
           </div>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && !streamingResponse ? (
           <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-900/60 p-10 text-center">
             <p className="text-lg font-semibold text-white">
               {activeAssistant ? `Chat with ${activeAssistant.name}` : "Ready when you are"}
@@ -245,16 +242,34 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
             </p>
           </div>
         ) : (
-          messages.map((message, idx) => (
-            <div key={idx} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] sm:max-w-[75%] ${message.role === "user" ? "rounded-br-none" : "rounded-bl-none"} ${roleStyles[message.role === "user" ? "user" : "assistant"]} px-5 py-4`}>
-                <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                  {message.role === "user" ? "You" : activeAssistant?.name || "Assistant"}
+          <>
+            {/* ஏற்கனவே ஃபயர்ஸ்டோரில் இருக்கும் பழைய மெசேஜ்கள் */}
+            {messages.map((message, idx) => (
+              <div key={idx} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[85%] sm:max-w-[75%] ${message.role === "user" ? "rounded-br-none" : "rounded-bl-none"} ${roleStyles[message.role === "user" ? "user" : "assistant"]} px-5 py-4`}>
+                  <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                    {message.role === "user" ? "You" : activeAssistant?.name || "Assistant"}
+                  </div>
+                  <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-100">{message.content}</div>
                 </div>
-                <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-100">{message.content}</div>
               </div>
-            </div>
-          ))
+            ))}
+
+            {/* ---> புது வரவு: AI ரியல்-டைமில் டைப் செய்யும் மெசேஜைக் காட்டும் பகுதி <--- */}
+            {streamingResponse && (
+              <div className="flex justify-start animate-fade-in">
+                <div className="max-w-[85%] sm:max-w-[75%] rounded-3xl rounded-bl-none border border-slate-700 bg-slate-900 text-slate-100 px-5 py-4">
+                  <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                    {activeAssistant?.name || "Assistant"}
+                  </div>
+                  <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-100">
+                    {streamingResponse}
+                    <span className="inline-block w-2 h-4 ml-1 bg-slate-400 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -284,9 +299,9 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
           </div>
         )}
 
-        {isLoading && (
+        {isLoading && !streamingResponse && (
           <div className="absolute -top-10 left-6 right-6 rounded-xl border border-slate-800 bg-slate-900/95 px-4 py-2 text-xs text-slate-400 w-fit shadow-lg animate-pulse">
-            Generating response...
+            Thinking...
           </div>
         )}
         {error && (
