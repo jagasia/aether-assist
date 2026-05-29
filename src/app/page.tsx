@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useState, useEffect, useRef } from "react";
-import { ArrowRight, Sparkles, Menu, X, Copy, Download } from "lucide-react";
+import { ArrowRight, Sparkles, Menu, X, Copy, Download, Volume2, Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "../components/AuthContext";
 import { AssistantProvider, useAssistant } from "../components/AssistantContext";
 import AssistantsSidebar from "../components/AssistantsSidebar";
@@ -52,12 +52,33 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string>("");
   const [streamingResponse, setStreamingResponse] = useState<string>("");
+  const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
   useEffect(() => { scrollToBottom(); }, [messages, streamingResponse]);
 
+  const playAudio = async (text: string, messageId: string) => {
+    setIsSpeaking(messageId);
+    try {
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!response.ok) throw new Error("Audio generation failed");
+      const audioBlob = await response.blob();
+      const audio = new Audio(URL.createObjectURL(audioBlob));
+      audio.play();
+      audio.onended = () => setIsSpeaking(null);
+    } catch (error) {
+      console.error(error);
+      setIsSpeaking(null);
+    }
+  };
+
+  // ... (முந்தைய useEffect மற்றும் sendMessage லாஜிக் அப்படியே இருக்கட்டும்)
   useEffect(() => {
     if (activeChatId && chats && chats.length > 0 && assistants && assistants.length > 0) {
       const currentChatData = chats.find((c) => c.id === activeChatId);
@@ -165,14 +186,6 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
             <h2 className="mt-1 text-2xl sm:text-3xl font-semibold text-white">{activeAssistant?.name || "Aether Assist"}</h2>
           </div>
         </div>
-        <div className="hidden sm:flex flex-col gap-3 sm:flex-row sm:items-center">
-            {activeAssistant && (
-                <div className="flex min-w-[240px] flex-col gap-2 text-sm text-slate-400">
-                    <span className="text-xs font-medium">Model</span>
-                    <div className="rounded-2xl border border-slate-700 bg-slate-900/95 px-4 py-2.5 text-slate-100 text-xs">{activeAssistant.model}</div>
-                </div>
-            )}
-        </div>
       </div>
       <section className="flex-1 overflow-y-auto px-6 py-6 space-y-4 min-h-0 pb-32">
         {loadingMessages ? (
@@ -190,6 +203,15 @@ function ChatWorkspace({ onMenuClick }: ChatWorkspaceProps) {
                 <div className={`max-w-[85%] sm:max-w-[75%] ${roleStyles[m.role]} px-5 py-4`}>
                     <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-slate-500">{m.role === "user" ? "You" : activeAssistant?.name}</div>
                     <div className="prose prose-invert max-w-none text-[15px] leading-7"><ReactMarkdown components={MarkdownComponents}>{m.content}</ReactMarkdown></div>
+                    {m.role === "assistant" && (
+                        <button 
+                            onClick={() => playAudio(m.content, i.toString())}
+                            disabled={isSpeaking !== null}
+                            className="mt-2 text-slate-500 hover:text-indigo-400 transition-colors"
+                        >
+                            {isSpeaking === i.toString() ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                        </button>
+                    )}
                 </div>
               </div>
             ))}
